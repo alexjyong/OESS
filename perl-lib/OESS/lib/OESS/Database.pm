@@ -31,11 +31,11 @@ OESS::Database - Database Interaction Module
 
 =head1 VERSION
 
-Version 1.1.7
+Version 1.1.8
 
 =cut
 
-our $VERSION = '1.1.7';
+our $VERSION = '1.1.8';
 
 =head1 SYNOPSIS
 
@@ -81,7 +81,7 @@ use OESS::Topology;
 use DateTime;
 use Data::Dumper;
 
-use constant VERSION => '1.1.7';
+use constant VERSION => '1.1.8';
 use constant MAX_VLAN_TAG => 4096;
 use constant MIN_VLAN_TAG => 1;
 use constant SHARE_DIR => "/usr/share/doc/perl-OESS-" . VERSION . "/";
@@ -1331,7 +1331,7 @@ sub get_circuits_on_link{
 	return;
     }
 
-    my $query = "select link_path_membership.end_epoch as lpm_end, circuit_instantiation.end_epoch as ci_end, circuit.*, circuit_instantiation.*, path.* from link_path_membership, path, circuit, circuit_instantiation  where path.path_id = link_path_membership.path_id and link_path_membership.link_id = ? and link_path_membership.end_epoch = -1 and circuit.circuit_id = path.circuit_id and circuit_instantiation.circuit_id = circuit.circuit_id and link_path_membership.end_epoch = -1 and circuit_instantiation.end_epoch = -1 and circuit_instantiation.circuit_state ='active'";
+    my $query = "select link_path_membership.end_epoch as lpm_end, circuit_instantiation.end_epoch as ci_end, circuit.*, circuit_instantiation.*, path.* from link_path_membership, path, circuit, circuit_instantiation  where path.path_id = link_path_membership.path_id and link_path_membership.link_id = ? and link_path_membership.end_epoch = -1 and circuit.circuit_id = path.circuit_id and circuit_instantiation.circuit_id = circuit.circuit_id and link_path_membership.end_epoch = -1 and circuit_instantiation.end_epoch = -1 and (circuit_instantiation.circuit_state = 'active' or circuit_instantiation.circuit_state = 'reserved' or circuit_instantiation.circuit_state = 'provisioned' or circuit_instantiation.circuit_state = 'scheduled')";
 
     my $circuits = $self->_execute_query($query,[$link_id]);
 
@@ -2016,8 +2016,8 @@ sub get_all_workgroups {
     return $workgroups;
 }
 
-# =head2 start_node_maintenance
-# =cut
+=head2 start_node_maintenance
+=cut
 sub start_node_maintenance {
     my $self = shift;
     my $node_id = shift;
@@ -2078,8 +2078,8 @@ sub start_node_maintenance {
     return $result;
 }
 
-# =head2 end_node_maintenance
-# =cut
+=head2 end_node_maintenance
+=cut
 sub end_node_maintenance {
     my $self = shift;
     my $node_id = shift;
@@ -2104,8 +2104,8 @@ sub end_node_maintenance {
     return $result;
 }
 
-# =head2 get_node_maintenance
-# =cut
+=head2 get_node_maintenance
+=cut
 sub get_node_maintenance {
     my $self = shift;
     my $node_id = shift;
@@ -2134,9 +2134,8 @@ sub get_node_maintenance {
     return $result;
 }
 
-# =head2 get_node_maintenances
-
-# =cut
+=head2 get_node_maintenances
+=cut
 sub get_node_maintenances {
     my $self = shift;
 
@@ -2252,8 +2251,8 @@ sub end_link_maintenance {
     return $result;
 }
 
-# =head2 get_link_maintenance
-# =cut
+=head2 get_link_maintenance
+=cut
 sub get_link_maintenance {
     my $self = shift;
     my $link_id = shift;
@@ -2282,8 +2281,8 @@ sub get_link_maintenance {
     return $result;
 }
 
-# =head2 get_link_maintenances
-# =cut
+=head2 get_link_maintenances
+=cut
 sub get_link_maintenances {
     my $self = shift;
 
@@ -3664,6 +3663,7 @@ sub get_circuit_details {
 
     # basic circuit info
     my $query = "select circuit.restore_to_primary, circuit.external_identifier, circuit.name, circuit.description, circuit.circuit_id, circuit.static_mac, circuit_instantiation.modified_by_user_id, circuit_instantiation.loop_node, circuit.workgroup_id, " .
+        " circuit.remote_url, circuit.remote_requester, " . 
 	" circuit_instantiation.reserved_bandwidth_mbps, circuit_instantiation.circuit_state, circuit_instantiation.start_epoch  , " .
 	" if(bu_pi.path_state = 'active', 'backup', 'primary') as active_path " .
 	"from circuit " .
@@ -3696,14 +3696,14 @@ sub get_circuit_details {
                     'workgroup_id'           => $row->{'workgroup_id'},
 		    'restore_to_primary'     => $row->{'restore_to_primary'},
 		    'static_mac'             => $row->{'static_mac'},
-                    'external_identifier'    => $row->{'external_identifier'}
+                    'external_identifier'    => $row->{'external_identifier'},
+                    'remote_requester'       => $row->{'remote_requester'},
+                    'remote_url'             => $row->{'remote_url'}
                    };
         if ( $row->{'circuit_state'} eq 'decom' ){
-            $show_historical =1;
+            $show_historical = 1;
         }
-
     }
-
 
     $details->{'internal_ids'} = $self->get_circuit_internal_ids(circuit_id => $circuit_id) || {};
 
@@ -3765,13 +3765,6 @@ sub get_circuit_internal_ids {
 
     my $circuit_id = $args{'circuit_id'};
 
-#    my $query = "select internal_vlan_id, node.node_id, node.name, path.path_type " .
-#	" from path_instantiation_vlan_ids " .
-#	" join path_instantiation on path_instantiation.path_instantiation_id = path_instantiation_vlan_ids.path_instantiation_id " .
-#	" join path on path.path_id = path_instantiation.path_id " .
-#	" join node on node.node_id = path_instantiation_vlan_ids.node_id " .
-#s	" where path.circuit_id = ? and path_instantiation.end_epoch = -1";
-
     my $query = "
 select link_instantiation.interface_a_id,link_instantiation.interface_z_id, 
 link_path_membership.interface_a_vlan_id, link_path_membership.interface_z_vlan_id, 
@@ -3791,8 +3784,7 @@ join node as node_a on int_a.node_id=node_a.node_id
 join node as node_z on int_z.node_id=node_z.node_id
 ";
     my $ids = $self->_execute_query($query, [$circuit_id]);
-
-    if (! defined $ids){
+    if (!defined $ids){
 	$self->_set_error("Internal error while fetching circuit internal vlan ids.");
 	return;
     }
@@ -3800,7 +3792,6 @@ join node as node_z on int_z.node_id=node_z.node_id
     my $results;
 
     foreach my $row (@$ids){
-
 	my $path_type = $row->{'path_type'};
 	my $interface_a       = $row->{'interface_a_id'};
         my $vlan_a = $row->{'interface_a_vlan_id'};
@@ -3962,18 +3953,14 @@ sub get_circuit_links {
 	" join node node_a on if_a.node_id = node_a.node_id ".
 	" join node node_z on if_z.node_id = node_z.node_id ";
 
- if ($args{'show_historical'}){
-     #warn( "Getting Historical Data");
-      $query =
-
-        "select link.name, node_a.name as node_a, if_a.name as interface_a, if_a.port_number as port_no_a, node_z.name as node_z, if_z.name as interface_z, if_z.port_number as port_no_z ".
- "from path join link_path_membership on path.path_id = link_path_membership.path_id ".
-"and path.circuit_id = ? and path.path_type= ? and link_path_membership.end_epoch= (select max(end_epoch) from link_path_membership m where m.path_id = path.path_id) ".
-"join link on link_path_membership.link_id = link.link_id ".
-"join link_instantiation link_inst on link.link_id = link_inst.link_id and link_inst.end_epoch = -1 ".
-"join interface if_a on link_inst.interface_a_id = if_a.interface_id ".
-"join interface if_z on link_inst.interface_z_id = if_z.interface_id  join node node_a on if_a.node_id = node_a.node_id  join node node_z on if_z.node_id = node_z.node_id ";
-
+ if ($args{'show_historical'} == 1) { # For some reason this is evaluating to true
+     $query = "select link.name, node_a.name as node_a, if_a.name as interface_a, if_a.port_number as port_no_a, node_z.name as node_z, if_z.name as interface_z, if_z.port_number as port_no_z ".
+         "from path join link_path_membership on path.path_id = link_path_membership.path_id ".
+         "and path.circuit_id = ? and path.path_type= ? and link_path_membership.end_epoch= (select max(end_epoch) from link_path_membership m where m.path_id = path.path_id) ".
+         "join link on link_path_membership.link_id = link.link_id ".
+         "join link_instantiation link_inst on link.link_id = link_inst.link_id and link_inst.end_epoch = -1 ".
+         "join interface if_a on link_inst.interface_a_id = if_a.interface_id ".
+         "join interface if_z on link_inst.interface_z_id = if_z.interface_id  join node node_a on if_a.node_id = node_a.node_id  join node node_z on if_z.node_id = node_z.node_id ";
     }
     my $sth = $self->_prepare_query($query) or return;
 
@@ -6190,6 +6177,10 @@ sub provision_circuit {
     my $remote_tags      = $args{'remote_tags'} || [];
     my $restore_to_primary = $args{'restore_to_primary'} || 0;
     my $static_mac       = $args{'static_mac'} || 0;
+    my $state            = $args{'state'} || 'active';
+    my $remote_url       = $args{'remote_url'};
+    my $remote_requester = $args{'remote_requester'};
+
 
     if($#{$interfaces} < 1){
         $self->_set_error("Need at least 2 endpoints");
@@ -6247,16 +6238,17 @@ sub provision_circuit {
 
     my $name = $workgroup_details->{'name'} . "-" . $uuid;
 
-        my $state;
-    if($provision_time > time()){
-        $state = "scheduled";
-    }else{
-        $state = "deploying";
+    if(!defined($state)){
+	if($provision_time > time()){
+	    $state = "scheduled";
+	}else{
+	    $state = "deploying";
+	}
     }
 
     # create circuit record
-    my $circuit_id = $self->_execute_query("insert into circuit (name, description, workgroup_id, external_identifier, restore_to_primary, static_mac,circuit_state) values (?, ?, ?, ?, ?, ?,?)",
-					   [$name, $description, $workgroup_id, $external_id, $restore_to_primary, $static_mac,$state]);
+    my $circuit_id = $self->_execute_query("insert into circuit (name, description, workgroup_id, external_identifier, restore_to_primary, static_mac,circuit_state, remote_url, remote_requester) values (?, ?, ?, ?, ?, ?,?,?,?)",
+					   [$name, $description, $workgroup_id, $external_id, $restore_to_primary, $static_mac,$state, $remote_url, $remote_requester]);
 
     if (! defined $circuit_id ){
         $self->_set_error("Unable to create circuit record.");
@@ -6270,7 +6262,7 @@ sub provision_circuit {
     $query = "insert into circuit_instantiation (circuit_id, reserved_bandwidth_mbps, circuit_state, modified_by_user_id, end_epoch, start_epoch) values (?, ?, ?, ?, -1, unix_timestamp(now()))";
     $self->_execute_query($query, [$circuit_id, $bandwidth, $state, $user_id]);
 
-    if($state eq 'scheduled'){
+    if($state eq 'scheduled' || $state eq 'reserved'){
 
         $args{'user_id'}    = $user_id;
         $args{'circuit_id'} = $circuit_id;
@@ -6282,9 +6274,9 @@ sub provision_circuit {
             return;
         }
 
-        $self->_commit();
+#        $self->_commit();
 
-        return {"success" => 1, "circuit_id" => $circuit_id};
+#        return {"success" => 1, "circuit_id" => $circuit_id};
     }
     #handle when an event isn't scheduled to be built, but does have a scheduled removal date.
     if($remove_time != -1){
@@ -6399,7 +6391,7 @@ sub provision_circuit {
 
         if (! $interface_id){
             $self->_set_error("Unable to find interface associated with URN: $urn");
-                $self->_rollback();
+            $self->_rollback();
             return;
         }
 
@@ -6408,7 +6400,7 @@ sub provision_circuit {
 
         if (! defined $self->_execute_query($query, [$interface_id, $circuit_id, $tag])){
             $self->_set_error("Unable to create circuit edge to interface \"$urn\" with tag $tag.");
-                $self->_rollback();
+            $self->_rollback();
             return;
         }
 
@@ -6430,7 +6422,7 @@ sub provision_circuit {
         # create the primary path object
         $query = "insert into path (path_type, circuit_id, path_state) values (?, ?, ?)";
 
-            my $path_state = "deploying";
+        my $path_state = "deploying";
 
         if ($path_type eq "backup"){
             $path_state = "available";
@@ -6695,6 +6687,49 @@ sub _add_remove_event {
     if (! defined $result){
 	$self->_set_error("Error creating scheduled removal.");
 	return;
+    }
+
+    return 1;
+}
+
+=head2 _add_remove_event
+
+=cut
+
+sub _add_edit_event {
+    my $self   = shift;
+    my $params = shift;
+
+    my $tmp;
+    $tmp->{'version'}       = "1.0";
+    $tmp->{'action'}        = "edit";
+    $tmp->{'state'}         = $params->{'state'};
+    $tmp->{'name'}          = $params->{'name'};
+    $tmp->{'bandwidth'}     = $params->{'bandwidth'};
+    $tmp->{'links'}         = $params->{'links'};
+    $tmp->{'backup_links'}  = $params->{'backup_links'};
+    $tmp->{'nodes'}         = $params->{'nodes'};
+    $tmp->{'interfaces'}    = $params->{'interfaces'};
+    $tmp->{'tags'}          = $params->{'tags'};
+    $tmp->{'start_time'}    = $params->{'start_time'};
+    $tmp->{'end_time'}      = $params->{'end_time'};
+
+
+    my $circuit_layout = XMLout($tmp);
+
+    my $query = "insert into scheduled_action (user_id,workgroup_id,circuit_id,registration_epoch,activation_epoch,circuit_layout,completion_epoch) VALUES (?,?,?,?,?,?,-1)";
+
+    my $result = $self->_execute_query($query,[$params->{'user_id'},
+                                               $params->{'workgroup_id'},
+                                               $params->{'circuit_id'},
+                                               time(),
+                                               $params->{'edit_time'},
+                                               $circuit_layout
+                                               ]);
+
+    if (! defined $result){
+        $self->_set_error("Error creating scheduled removal.");
+        return;
     }
 
     return 1;
@@ -7082,31 +7117,31 @@ sub edit_circuit {
     my $self = shift;
     my %args = @_;
 
-    my $circuit_id     = $args{'circuit_id'};
-    my $description    = $args{'description'};
-    my $bandwidth      = $args{'bandwidth'};
-    my $provision_time = $args{'provision_time'};
-    my $remove_time    = $args{'remove_time'};
-    my $links          = $args{'links'};
-    my $backup_links   = $args{'backup_links'};
-    my $nodes          = $args{'nodes'};
-    my $interfaces     = $args{'interfaces'};
-    my $tags           = $args{'tags'};
-    my $state          = $args{'state'} || "active";
-    my $user_name      = $args{'user_name'};
-    my $workgroup_id   = $args{'workgroup_id'};
-    my $loop_node       = $args{'loop_node'};
-    my $remote_endpoints = $args{'remote_endpoints'} || [];
-    my $remote_tags      = $args{'remote_tags'} || [];
-    my $restore_to_primary = $args{'restore_to_primary'} || 0;
-    my $mac_addresses    = $args{'mac_addresses'};
+    my $circuit_id                = $args{'circuit_id'};
+    my $description               = $args{'description'};
+    my $bandwidth                 = $args{'bandwidth'};
+    my $provision_time            = $args{'provision_time'};
+    my $remove_time               = $args{'remove_time'};
+    my $links                     = $args{'links'};
+    my $backup_links              = $args{'backup_links'};
+    my $nodes                     = $args{'nodes'};
+    my $interfaces                = $args{'interfaces'};
+    my $tags                      = $args{'tags'};
+    my $state                     = $args{'state'} || "active";
+    my $user_name                 = $args{'user_name'};
+    my $workgroup_id              = $args{'workgroup_id'};
+    my $loop_node                 = $args{'loop_node'};
+    my $remote_endpoints          = $args{'remote_endpoints'} || [];
+    my $remote_tags               = $args{'remote_tags'} || [];
+    my $restore_to_primary        = $args{'restore_to_primary'} || 0;
+    my $mac_addresses             = $args{'mac_addresses'};
     my $endpoint_mac_address_nums = $args{'endpoint_mac_address_nums'};
-    my $static_mac       = $args{'static_mac'} || 0;
-    my $do_commit = defined($args{'do_commit'}) ? $args{'do_commit'} : 1;
-    my $do_sanity_check = defined($args{'do_sanity_check'}) ? $args{'do_sanity_check'} : 1;
+    my $static_mac                = $args{'static_mac'} || 0;
+    my $do_commit                 = defined($args{'do_commit'}) ? $args{'do_commit'} : 1;
+    my $do_sanity_check           = defined($args{'do_sanity_check'}) ? $args{'do_sanity_check'} : 1;
 
     # whether this edit should only edit everything or just local bits
-    my $do_external    = $args{'do_external'} || 0;
+    my $do_external               = $args{'do_external'} || 0;
 
     # do a quick check on arguments passed in
     if($do_sanity_check && !$self->circuit_sanity_check(%args)){
@@ -7979,9 +8014,11 @@ sub can_modify_circuit {
 
     my $user = $self->get_user_by_id( user_id => $user_id )->[0];
     if($user->{'type'} eq 'read-only'){
+        $self->_set_error("User '" . $params{'username'} . "' has read-only permissions.");
         return 0;
     }
     elsif($user->{'status'} eq 'decom'){
+        $self->_set_error("User '" . $params{'username'} . "' has been decommissioned.");
         return 0;
     }
 
@@ -8244,9 +8281,15 @@ Generates an XML representation of the OESS database designed to be compliant OS
 
 sub gen_topo{
     my $self   = shift;
+    my $wg = shift || OSCARS_WG;
+    my $domain_prefix = shift;
 
-    my $workgroup = $self->get_workgroup_details_by_name( name => OSCARS_WG );
+    my $workgroup = $self->get_workgroup_details_by_name( name => $wg );
     my $domain = $self->get_local_domain_name();
+
+    if(defined($domain_prefix)){
+        $domain = "$domain_prefix." . $domain;
+    }
 
     my $xml = "";
     my $writer = new XML::Writer(OUTPUT => \$xml, DATA_INDENT => 2, DATA_MODE => 1, NAMESPACES => 1);
@@ -9182,6 +9225,21 @@ sub is_watchdog_enabled{
     return 1 if(!defined($self->{'processes'}->{'watchdog'}));
 
     if($self->{'processes'}->{'watchdog'}->{'status'} eq 'enabled'){
+        return 1;
+    }else{
+        return 0;
+    }
+}
+
+=head2 is_nsi_enabled
+
+=cut
+
+sub is_nsi_enabled{
+    my $self = shift;
+    return 1 if(!defined($self->{'processes'}->{'nsi'}));
+
+    if($self->{'processes'}->{'nsi'}->{'status'} eq 'enabled'){
         return 1;
     }else{
         return 0;
